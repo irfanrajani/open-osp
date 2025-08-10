@@ -1,0 +1,178 @@
+Concept and approach
+
+- Objective: Recreate the OSCAR EMR front end with a modern, accessible React UI, keeping workflows familiar while improving speed, clarity, and reliability. We’ll bridge to existing OSCAR/OpenOSP endpoints via a thin compatibility layer so the server can remain unchanged.
+- Method: Strangler migration. Replace high-impact modules first (Appointments, Encounter, Patients), then incrementally swap in Inbox, Ticklers/Messages, Reports, Admin, etc., using feature flags and fallbacks to legacy where needed.
+- Visual/UX: Calm clinical palette, dense data layouts where appropriate, keyboard-first flows, strong status visibility (badges, chips), consistent split-pane layouts for list + detail, and a patient summary sidebar in clinical screens.
+
+Comprehensive step-by-step plan
+
+Stage 0 — Discovery and mapping (1–3 weeks)
+- Goals:
+  - Inventory OSCAR features and URLs, identify core workflows and pain points.
+  - Define canonical domain models to normalize legacy responses.
+- Tasks:
+  - Build a Function Parity Matrix (feature, legacy URL(s), service/controller, new route, DTO contract, status).
+  - Catalog auth/session behavior (cookie, CSRF token source).
+  - Capture representative API samples for appointments, patients, notes, inbox items, messages, ticklers, reports, admin.
+- Deliverables:
+  - Parity Matrix spreadsheet
+  - Endpoint inventory and sample payloads
+  - Initial DTOs map (Appointment, Patient, EncounterNote, InboxItem, Message, Tickler, Report, Provider, User)
+
+Stage 1 — Platform baseline and design system (1–2 weeks)
+- Goals: Lock in architecture and accessible UI kit.
+- Tasks:
+  - Confirm router structure and navigation map that mirrors OSCAR.
+  - Finalize base components: Button, Input, Select, Tabs, Card, Table, Modal.
+  - Define accessibility standards, focus order, keyboard shortcuts.
+- Deliverables:
+  - Navigation map matching OSCAR sections
+  - Component catalogue with usage patterns and a11y notes
+  - Theming tokens and density guidelines
+
+Stage 2 — Compatibility API layer and configuration (1–2 weeks)
+- Goals: One way in/out for server calls; robust validation.
+- Tasks:
+  - Implement http client with CSRF injection and cookie credentials (done in scaffold).
+  - Implement zod-validated DTO schemas and adapters (done in scaffold; extend as needed).
+  - Add setHttpConfig bootstrap and a simple feature-flag module.
+- Deliverables:
+  - Services for appointments, patients, encounters, inbox, messages, ticklers, reports, admin, dashboard (scaffolded).
+  - Mock mode with latency simulation for realistic demos (already present).
+
+Stage 3 — Core clinical MVP (2–4 weeks)
+1) Appointments (Day, then Week)
+   - Features: provider filter, date navigation, statuses, details panel; later add Week grid.
+   - Live wiring: GET /appointments?date=&providerId=, PATCH /appointments/:id/status.
+   - Acceptance: parity with OSCAR day view, stable status transitions, search, provider filter.
+2) Encounter Note
+   - Features: SOAP tabs, templates/snippets, autosave draft, sign, version indicator.
+   - Live wiring: GET/POST /encounters/:id/note, POST orders placeholder.
+   - Acceptance: basic charting parity, data persistence, sign workflow and audit info.
+3) Patient Registry
+   - Features: search by name/phone, sortable table, open encounter, demographics view.
+   - Live wiring: GET /patients?search=, GET /patients/:id.
+   - Acceptance: similar search feel and result relevance to OSCAR.
+
+Stage 4 — Operational triage (2–3 weeks)
+- Inbox
+  - Features: list + preview, filters (Lab/Document/Result), assign, acknowledge, link to encounter.
+  - Live wiring: GET /inbox?type=&assignedTo=, POST /inbox/:id/ack, POST /inbox/:id/assign.
+  - Acceptance: can triage, acknowledge, and navigate to context.
+- Ticklers
+  - Features: task list, statuses, links to items.
+  - Live wiring: GET /ticklers, PATCH /ticklers/:id.
+  - Acceptance: visible task states and navigation work.
+- Messages
+  - Features: list, read status, compose/send.
+  - Live wiring: GET /messages, POST /messages, PATCH /messages/:id/read.
+  - Acceptance: communication workflows function round-trip.
+
+Stage 5 — Orders and prescriptions (3–5 weeks)
+- Orders composer
+  - Labs/imaging/meds, order sets, signatures, allergy checks.
+  - Live wiring: POST /orders, GET /ordersets (or local config), interactions endpoint if available.
+- Prescriptions
+  - eRx integration or PDF print fallback, refills.
+  - Acceptance: complete prescription flow with validation and interaction warnings.
+
+Stage 6 — Documents & scans (2–4 weeks)
+- Features: queue, upload, patient linking, categories, preview.
+- Live wiring: GET /documents, POST upload, PATCH metadata.
+- Acceptance: can ingest, classify, and open documents securely.
+
+Stage 7 — Billing & claims (3–5 weeks)
+- Features: claim creation, code picker, submission, reconciliation.
+- Live wiring: claims endpoints per OpenOSP/Oscar configuration.
+- Acceptance: can generate and submit claims with status visibility.
+
+Stage 8 — Admin & preferences (1–2 weeks)
+- Features: users, providers, schedules, code lists; personal preferences (theme, notifications).
+- Live wiring: GET /admin/system-info, providers/users CRUD where authorized.
+- Acceptance: essential admin tasks available with role gating.
+
+Stage 9 — Reports & dashboard (1–2 weeks)
+- Features: report catalogue, run/report output, KPI dashboard.
+- Live wiring: GET /reports, POST /reports/:id/run, GET /dashboard.
+- Acceptance: common reports return and render; dashboard reflects live counts.
+
+Stage 10 — Hardening (2–4 weeks)
+- Accessibility: WCAG AA audit (keyboard nav, focus traps, labels), color contrast fixes.
+- Performance: virtualized lists for large tables, incremental data loading, memoization.
+- Reliability: error boundaries, retry/backoff, optimistic updates where safe.
+- Audit surface: ensure all writes display user/time summaries.
+
+Stage 11 — UAT, training, and rollout (2–4 weeks)
+- Parallel run with legacy UI, role-based cohorts.
+- Training materials with quick-start videos and cheat sheets.
+- Feature flags to fall back per module if issues arise.
+
+Data contracts and mapping (key entities)
+- Appointment: id, date, time, patientName, reason, phone, providerId, status
+- Patient: id, name, dob, sex, phone, demographics
+- EncounterNote: id, encounterId, subjective, objective, assessment, plan, signedAt
+- InboxItem: id, type, receivedAt, patientName, summary, assignedTo, status
+- Message: id, from, to, sentAt, subject, body, read
+- Tickler: id, title, createdAt, dueAt, assignedTo, status, link
+- Report: id, name, category, description
+- Provider/User: id, name, role
+Note: The adapter will map OSCAR’s actual response shapes (including legacy formats and special values) into these DTOs via zod, coercing dates and enums safely.
+
+Testing and acceptance criteria
+- Per-module checklists aligned to OSCAR workflows:
+  - Appointments: create/modify status, filter by provider, navigate dates, open encounter.
+  - Encounter: author note, autosave, sign, see audit, place a basic order.
+  - Inbox: acknowledge, assign, link to encounter, preview artifact.
+  - Ticklers/Messages: create and resolve tasks, send/read messages.
+  - Reports/Admin/Dashboard: run report, see system info, KPI alignment for the day.
+- Environments and config:
+  - Dev: mock mode (no baseUrl) with seeded scenarios.
+  - QA/UAT: setHttpConfig({ baseUrl, csrfHeader, getCsrfToken }) to talk to live OSCAR.
+- Data seeding:
+  - Deterministic mock scenarios to simulate busy clinic days, heavy inbox, etc., for consistent test runs.
+
+Security, compliance, and observability
+- Session: cookie-based with same-site settings; CSRF header passthrough.
+- PHI-safe logging: do not send payloads to front-end telemetry; log metadata only.
+- Access control: hide unauthorised actions in UI; server remains source of truth.
+- Audit: show “last saved by X at Y” for note/order operations.
+- Error boundaries with user-friendly messages; capture exception fingerprints.
+
+Performance and UX guidelines
+- Virtualize large tables (patients, inbox) when live data volumes demand it.
+- Skeletons and optimistic interactions where non-destructive (e.g., status tags).
+- Keyboard shortcuts for power users (e.g., S to Save, G then A to go to Appointments).
+- Maintain visual density similar to OSCAR where users benefit from more on screen.
+
+Dependencies and constraints
+- Keep server unchanged; use the adapter to normalize.
+- Avoid new client-side libs unless essential; use current stack.
+- Use feature flags to gate modules to cohorts during rollout.
+
+What I need from you to start wiring live data
+- OSCAR/OpenOSP base URL for non-prod
+- Auth/session/CSRF details (cookie names, CSRF header, token retrieval method)
+- Example payloads for appointments, patients, notes, inbox, messages, ticklers
+- A test user with roles for clinical and admin functions
+- Any legacy routes we should deep-link to during early stages
+
+Proposed timeline (indicative, parallelizable)
+- Month 0–1: Stages 0–2 (mapping + API layer), start Stage 3 Appointments
+- Month 2–3: Complete Stage 3 (Encounter/Patients), Stage 4 (Inbox/Ticklers/Messages)
+- Month 3–4: Stage 5–6 (Orders/Prescriptions, Documents)
+- Month 4–5: Stage 7–9 (Billing, Admin/Reports/Dashboard)
+- Month 5–6: Stage 10–11 (hardening, UAT, rollout)
+
+When you say “Continue”
+- I will start Stage 2.1: add a small bootstrap init to call setHttpConfig and introduce feature flags (mock vs live) without adding dependencies.
+- Then wire Appointments and Inbox to live endpoints behind a toggle, keeping mock as fallback.
+- I’ll add acceptance test scripts (manual steps) for you to validate each module quickly.
+
+Summary
+- I outlined a phased, testable plan to replicate OSCAR’s front end with a React-based UI and an adapter to your current backend, mirroring OSCAR’s functions and layouts where it matters.
+- Each stage lists goals, tasks, deliverables, and acceptance criteria to keep progress clear and reversible.
+
+Suggestions
+- Share non-prod base URL, auth model, and two or three real sample responses to start live wiring.
+- Approve the feature-flag bootstrap so we can flip modules from mock to live safely.
+- Confirm the first validation targets: Appointments Day view and Inbox triage.
